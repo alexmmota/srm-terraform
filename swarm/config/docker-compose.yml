@@ -1,0 +1,194 @@
+version: '3.6'
+
+networks:
+  srm:
+
+volumes:
+  srm_mysql:
+    driver: local
+  srm_mongodb:
+    driver: local
+
+services:
+
+  proxy:
+    image: haproxy:alpine
+    container_name: proxy
+    restart: always
+    networks:
+      - srm
+    ports:
+      - "80:80"
+    configs:
+      - source: proxy_config
+        target: /usr/local/etc/haproxy/haproxy.cfg
+    deploy:
+      placement:
+        constraints: [node.role==manager]
+
+  estoque-service:
+    image: alexmmota/srm-estoque-service:latest
+    container_name: srm_estoque
+    networks:
+      - srm
+    environment:
+      TZ: "America/Sao_Paulo"
+      SERVER_PORT: "8080"
+      CONFIGSERVER_URI: "http://config-server:8080"
+      PROFILE: "default"
+
+  pedido-service:
+    image: alexmmota/srm-pedido-service:latest
+    container_name: srm_pedido
+    networks:
+      - srm
+    environment:
+      TZ: "America/Sao_Paulo"
+      SERVER_PORT: "8080"
+      CONFIGSERVER_URI: "http://config-server:8080"
+      PROFILE: "default"
+
+  config-server:
+    image: alexmmota/srm-config-server:latest
+    container_name: srm_configserver
+    networks:
+      - srm
+    environment:
+      TZ: "America/Sao_Paulo"
+      PROFILE: "default"
+      SERVER_PORT: "8080"
+
+  rabbitmq-srm:
+    image: rabbitmq:3-management
+    container_name: rabbitmq_srm
+    networks:
+      - srm
+      
+  service-discovery:
+    image: alexmmota/srm-service-discovery:latest
+    container_name: srm_servicediscovery
+    networks:
+      - srm
+    environment:
+      TZ: "America/Sao_Paulo"
+      PROFILE: "default"
+      SERVER_PORT: "8080"
+
+  service-gateway:
+    image: alexmmota/srm-service-gateway:latest
+    container_name: srm_servicegateway
+    networks:
+      - srm
+    environment:
+      TZ: "America/Sao_Paulo"
+      SERVER_PORT: "8080"
+      CONFIGSERVER_URI: "http://config-server:8080"
+      PROFILE: "default"
+
+  special-route-service:
+    image: alexmmota/srm-special-route-service:latest
+    container_name: srm_specialroute
+    networks:
+      - srm
+    environment:
+      TZ: "America/Sao_Paulo"
+      SERVER_PORT: "8080"
+      CONFIGSERVER_URI: "http://config-server:8080"
+      PROFILE: "default"
+
+  database:
+    image: mysql
+    container_name: srm_mysql
+    command: --init-file /usr/home/database/init.sql
+    restart: always
+    networks:
+      - srm
+    environment:
+      MYSQL_ROOT_PASSWORD: 1234
+      MYSQL_DATABASE: db_srm
+      TZ: "America/Sao_Paulo"
+    configs:
+      - source: mysql_config
+        target: /usr/home/database/init.sql
+    volumes:
+      - srm_mysql:/var/lib/mysql
+
+  mongodb:
+    image: mongo:3.6.3
+    container_name: srm_mongo
+    command: --bind_ip_all
+    networks:
+      - srm
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: 1234
+      MONGO_INITDB_DATABASE: db_srm
+    volumes:
+      - srm_mongodb:/data/db
+    configs:
+      - source: mongo_config
+        target: /docker-entrypoint-initdb.d/mongo-init.js
+
+  mongo-express:
+    image: mongo-express
+    restart: always
+    networks:
+      - srm
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongodb
+      ME_CONFIG_MONGODB_ADMINUSERNAME: root
+      ME_CONFIG_MONGODB_ADMINPASSWORD: 1234
+
+  security-service:
+    image: alexmmota/srm-security-service:latest
+    container_name: srm_securityservice
+    networks:
+      - srm
+    environment:
+      TZ: "America/Sao_Paulo"
+      SERVER_PORT: "8080"
+      CONFIGSERVER_URI: "http://config-server:8080"
+      PROFILE: "default"
+
+  redis:
+    image: redis:alpine
+    container_name: srm_redis
+    networks:
+      - srm
+
+  kafkaserver:
+    image: johnnypark/kafka-zookeeper
+    networks:
+      - srm
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    restart: always
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    networks:
+      - srm
+
+  logspout:
+    image: gliderlabs/logspout
+    command: syslog://logs5.papertrailapp.com:40661
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  tracing-service:
+    image: alexmmota/srm-tracing-service:latest
+    container_name: srm_tracingservice
+    networks:
+      - srm
+    environment:
+      TZ: "America/Sao_Paulo"
+      PROFILE: "default"
+      SERVER_PORT: "8080"
+
+configs:
+  mysql_config:
+    file: ./src/mysql/init.sql
+  mongo_config:
+    file: ./src/mongodb/mongo-init.js  
+  proxy_config:
+    file: ./src/proxy/haproxy.cfg
